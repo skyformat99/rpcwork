@@ -59,17 +59,26 @@
 #define panic(fmt, args...)			\
 ({						\
 	fprintf(stderr, "PANIC: " fmt, ##args);	\
+	fprintf(stderr, "\n");	\
 	abort();				\
 })
 
 #define sd_debug(fmt, args...)			\
 ({						\
 	fprintf(stderr, "DEBUG: " fmt, ##args);	\
+	fprintf(stderr, "\n");	\
 })
 
 #define sd_err(fmt, args...)			\
 ({						\
 	fprintf(stderr, "ERROR: " fmt, ##args);	\
+	fprintf(stderr, "\n");	\
+})
+
+#define sd_notice(fmt, args...)			\
+({                      \
+    fprintf(stderr, "NOTICE: " fmt, ##args); \
+    fprintf(stderr, "\n");  \
 })
 
 static inline int before(uint32_t seq1, uint32_t seq2)

@@ -379,14 +379,9 @@ retest:
 	pthread_exit(NULL);
 }
 
-int init_work_queue(size_t (*get_nr_nodes)(void))
+int init_work_queue()
 {
 	int ret;
-
-	wq_get_nr_nodes = get_nr_nodes;
-
-	if (wq_get_nr_nodes)
-		nr_nodes = wq_get_nr_nodes();
 
 	efd = eventfd(0, EFD_NONBLOCK);
 	if (efd < 0) {
@@ -404,8 +399,8 @@ int init_work_queue(size_t (*get_nr_nodes)(void))
 	return 0;
 }
 
-struct work_queue *create_work_queue(const char *name,
-				     enum wq_thread_control tc)
+static struct work_queue *create_work_queue(const char *name,
+				                            enum wq_thread_control tc)
 {
 	int ret;
 	struct wq_info *wi;
@@ -439,6 +434,11 @@ destroy_threads:
 	free(wi);
 
 	return NULL;
+}
+
+struct work_queue *create_dynamic_work_queue(const char *name)
+{
+	return create_work_queue(name, WQ_DYNAMIC);
 }
 
 struct work_queue *create_ordered_work_queue(const char *name)

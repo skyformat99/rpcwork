@@ -58,8 +58,8 @@ static inline bool is_worker_thread(void)
  * for dynamic work queues.  'create_cb' will be called when worker threads are
  * created and 'destroy_cb' will be called when worker threads are destroyed.
  */
-int init_work_queue(size_t (*get_nr_nodes)(void));
-struct work_queue *create_work_queue(const char *name, enum wq_thread_control);
+int init_work_queue(void);
+struct work_queue *create_dynamic_work_queue(const char *name);
 struct work_queue *create_ordered_work_queue(const char *name);
 struct work_queue *create_fixed_work_queue(const char *name, int nr_threads);
 void queue_work(struct work_queue *q, struct work *work);
