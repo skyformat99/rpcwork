@@ -27,7 +27,6 @@
 #include <sys/types.h>
 #include <sys/uio.h>
 
-#include "sheepdog_proto.h"
 #include "util.h"
 #include "event.h"
 #include "net.h"

@@ -5,6 +5,7 @@
 
 #include <limits.h>
 #include <sys/timerfd.h>
+#include <sys/eventfd.h>
 
 struct event_info;
 

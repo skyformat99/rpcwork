@@ -69,6 +69,12 @@
 	fprintf(stderr, "\n");	\
 })
 
+#define sd_info(fmt, args...)			\
+    ({                      \
+        fprintf(stderr, "INFO: " fmt, ##args); \
+        fprintf(stderr, "\n");  \
+    })
+
 #define sd_err(fmt, args...)			\
 ({						\
 	fprintf(stderr, "ERROR: " fmt, ##args);	\

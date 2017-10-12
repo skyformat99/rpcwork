@@ -5,7 +5,7 @@
 #include <arpa/inet.h>
 
 #include "list.h"
-#include "sheepdog_proto.h"
+#include "rpc_proto.h"
 
 /*
  * We can't always retry because if only IO NIC is down, we'll retry for ever.
