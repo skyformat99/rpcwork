@@ -78,6 +78,7 @@ int rpc_send_request(struct sd_req * req, struct sd_rsp *rsp, uint8_t *buff)
     memset(&nid, 0, sizeof(nid));
     memcpy(nid.addr, "127.0.0.1", strlen("127.0.0.1"));
     nid.port = 43433;
+    nid.is_socket = 1;
 	unsigned wlen = 0;
 	uint8_t *data = NULL;
 	struct sockfd *sfd;

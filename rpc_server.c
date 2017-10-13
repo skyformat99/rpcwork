@@ -875,7 +875,7 @@ int rpc_server_start(struct sd_op_template *ops, int ops_count) {
     if(ret){
 		return ret;
 	}
-    ret = create_listen_socket("/tmp/sock");
+    ret = create_listen_socket("/run/edfssmb.sock");
 	if(ret){
 		return ret;
 	}

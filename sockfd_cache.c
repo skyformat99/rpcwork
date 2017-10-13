@@ -343,8 +343,12 @@ grab:
 	/* Create a new cached connection for this node */
 	sd_debug("create cache connection %s idx %d", addr_to_str(addr, port),
 		 idx);
-	fd = connect_to((const char *)addr, port);
-	if (fd < 0) {
+    if (nid->is_socket) {
+	    fd = connect_to_socket("/run/edfssmb.sock");
+    } else {
+	    fd = connect_to((const char *)addr, port);
+    }
+    if (fd < 0) {
 		uatomic_set_false(&entry->fds[idx].in_use);
 		return NULL;
 	}
@@ -427,10 +431,14 @@ struct sockfd *sockfd_cache_get(const struct node_id *nid)
 		return sfd;
 
 	/* Fallback on a non-io connection that is to be closed shortly */
-	fd = connect_to((const char *)nid->addr, nid->port);
-	if (fd < 0)
-		return NULL;
-
+    if(nid->is_socket) {
+	    fd = connect_to_socket("/run/edfssmb.sock");
+    } else {
+        fd = connect_to((const char *)nid->addr, nid->port);
+    }
+    if (fd < 0) {
+        return NULL;
+    }
 	sfd = xmalloc(sizeof(*sfd));
 	sfd->idx = -1;
 	sfd->fd = fd;
