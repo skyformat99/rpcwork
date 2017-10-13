@@ -132,6 +132,60 @@ int create_listen_ports(const char *bindaddr, int port,
 	return !success;
 }
 
+int create_listen_sockets(const char *socket_path,
+        int (*callback)(int fd, void *), void *data)
+{
+    int fd, ret;
+    struct sockaddr_un srv_addr;
+
+    fd = socket(PF_UNIX,SOCK_STREAM,0);
+    if (fd < 0) {
+		sd_err("failed to create socket");
+		return 1;        
+    }
+
+    srv_addr.sun_family=AF_UNIX;
+    strncpy(srv_addr.sun_path,socket_path,sizeof(srv_addr.sun_path)-1);
+    unlink(socket_path);
+
+    ret = bind(fd,(struct sockaddr*)&srv_addr,sizeof(srv_addr));
+
+    if (ret) {
+		sd_err("failed to bind server socket: %s", socket_path);
+		close(fd);
+        unlink(socket_path);
+        return 1;
+    }
+
+    ret = chmod(socket_path,0777);
+    
+    if (ret) {
+		sd_err("failed to chmod server socket: %s", socket_path);
+		close(fd);
+        unlink(socket_path);
+        return 1;
+    }
+
+    ret = listen(fd, SOMAXCONN);
+    
+	if (ret) {
+		sd_err("failed to listen on server socket: %s", socket_path);
+		close(fd);
+        unlink(socket_path);
+        return 1;
+	} 
+
+	ret = callback(fd, data);
+	if (ret) {
+        sd_err("failed to run calback, server socket: %s", socket_path);
+		close(fd);
+        unlink(socket_path);
+        return 1;
+	}
+
+    return ret;
+}
+
 int connect_to(const char *name, int port)
 {
 	char buf[64];
@@ -561,6 +615,55 @@ int get_local_addr(uint8_t *bytes)
 out:
 	freeifaddrs(ifaddr);
 	return ret;
+}
+
+int connect_to_socket(const char *socket_path) {
+    int fd, ret;
+    struct linger linger_opt = {1, 0};
+    struct sockaddr_un srv_addr;
+
+    fd = socket(PF_UNIX,SOCK_STREAM,0);
+    if (fd < 0) {
+		sd_err("failed to create socket: %s",socket_path);
+		return -1;          
+    }
+	ret = setsockopt(fd, SOL_SOCKET, SO_LINGER, &linger_opt,
+			 sizeof(linger_opt));
+	if (ret) {
+		sd_err("failed to set SO_LINGER: %s",socket_path);
+		close(fd);
+		return -1;
+	}
+
+	ret = set_snd_timeout(fd);
+	if (ret) {
+		sd_err("failed to set send timeout: %s",socket_path);
+		close(fd);
+		return -1;
+	}
+
+	ret = set_rcv_timeout(fd);
+	if (ret) {
+		sd_err("failed to set recv timeout: %s",socket_path);
+		close(fd);
+		return -1;
+	}
+
+    srv_addr.sun_family=AF_UNIX;
+    strncpy(srv_addr.sun_path,socket_path,sizeof(srv_addr.sun_path)-1);
+reconnect:
+	ret = connect(fd, (struct sockaddr*)&srv_addr,sizeof(srv_addr));
+	if (ret) {
+		if (errno == EINTR) {
+            sd_err("%s reconnect",socket_path);
+			goto reconnect;
+        }
+		sd_err("failed to connect to %s %m %s", socket_path,strerror(errno));
+		close(fd);
+		return -1;
+	}
+	sd_debug("%d, %s", fd, socket_path);
+	return fd;
 }
 
 int create_unix_domain_socket(const char *unix_path,

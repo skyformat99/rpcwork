@@ -32,6 +32,7 @@ struct connection {
 
 	uint16_t port;
 	char ipstr[INET6_ADDRSTRLEN];
+    const char *socket_path;
 
 	bool dead;
 
@@ -69,6 +70,8 @@ int create_listen_ports(const char *bindaddr, int port,
 			int (*callback)(int fd, void *), void *data);
 int create_unix_domain_socket(const char *unix_path,
 			      int (*callback)(int, void *), void *data);
+int create_listen_sockets(const char *socket_path,
+        int (*callback)(int fd, void *), void *data);
 
 const char *addr_to_str(const uint8_t *addr, uint16_t port);
 uint8_t *str_to_addr(const char *ipstr, uint8_t *addr);
@@ -89,5 +92,6 @@ static inline int connect_to_addr(const uint8_t *addr, int port)
 {
 	return connect_to(addr_to_str(addr, 0), port);
 }
+int connect_to_socket(const char *socket_path);
 
 #endif

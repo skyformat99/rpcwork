@@ -790,6 +790,14 @@ static int create_listen_port(const char *bindaddr, int port)
 				   &is_inet_socket);
 }
 
+static int create_listen_socket(const char *socket_path)
+{
+	static bool is_inet_socket = true;
+
+	return create_listen_sockets(socket_path, create_listen_socket_fn,
+				   &is_inet_socket);    
+}
+
 static void init_ops(struct sd_op_template *ops,int ops_count){
 	sys->ops_count = ops_count;
 	sys->sd_ops = ops;
@@ -814,7 +822,7 @@ static void local_req_handler(int listen_fd, int events, void *data)
 		queue_request(req);
 	}
 }
-void local_request_init(void)
+static void local_request_init(void)
 {
 	INIT_LIST_HEAD(&sys->local_req_queue);
 	INIT_LIST_HEAD(&sys->req_wait_queue);
@@ -834,9 +842,17 @@ int rpc_server_start(struct sd_op_template *ops, int ops_count) {
 		sd_err("failed to add epoll event ");
 		return -1;
 	}
+    
 	if (init_work_queue()) {
 		return -1;
     }
+    
+    sys->net_wqueue = create_fixed_work_queue("WayFixed", 8);
+   	if (!sys->net_wqueue) {
+		sd_err("failed to create work queue");
+		return -1;
+	}
+    
     sys->fixed_work = create_fixed_work_queue("WayFixed", 4);
 	if (!sys->fixed_work) {
 		sd_err("failed to create work queue");
@@ -856,6 +872,13 @@ int rpc_server_start(struct sd_op_template *ops, int ops_count) {
 	}
     local_request_init();
     ret = create_listen_port("127.0.0.1", 43433);
+    if(ret){
+		return ret;
+	}
+    ret = create_listen_socket("/tmp/sock");
+	if(ret){
+		return ret;
+	}
     serv_init = true;
     return ret;
 }

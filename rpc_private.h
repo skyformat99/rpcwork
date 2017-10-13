@@ -145,14 +145,53 @@ struct system_info {
 	bool upgrade;
 };
 
+struct sdrequest_cache {
+	struct rb_root root;
+	struct sd_rw_lock lock;
+	int count;
+};
 
+struct sd_client {
+	uint32_t seq_num;
+	pthread_t request_thread;
+	int request_fd;
+	struct list_head request_list;
+	struct list_head inflight_list;
+	struct list_head blocking_list;
+	uatomic_bool stop_request_handler;
+	struct sd_mutex request_lock;
 
-struct sd_client;
+	struct connection conn;
 
+	uint32_t write_retry;
+	uint32_t read_retry;
+	uint32_t connect_retry;
+	uint32_t reconnect_count;
+    bool new_conn;
 
-void rpc_init_req(struct sd_req *req, uint8_t opcode);
+	struct sdrequest_cache sdreq_cache;
+};
 
+struct sd_request {
+	struct rb_node rb;
+	struct sd_client *cluster;
+	struct list_node list;
+	struct sd_req *hdr;
+	void *data;
+	size_t length;
+	off_t offset;
+	uint8_t opcode;
+	int efd;
+	int ret;
+	pthread_t tid;
+	uint32_t seq_num;
+	refcnt_t ref_count;
+};
 
+struct reconnect_entry{
+	struct sd_client *ci;
+	struct timer t;
+};
 
 int rpc_server_start(struct sd_op_template *ops, int ops_count);
 int rpc_server_socket_start(const char *socket_path,
@@ -185,7 +224,7 @@ void rpc_client_reset_new_session(struct sd_client *c);
 void rpc_client_retry(struct sd_client *c,int connect_retry,int read_retry,int write_retry);
 int rpc_client_run_req(struct sd_client *c, struct sd_req *hdr, void *data);
 
-void local_request_init(void);
+int rpc_send_request(struct sd_req * req, struct sd_rsp *rsp, uint8_t *buff);
 
 #endif
 
