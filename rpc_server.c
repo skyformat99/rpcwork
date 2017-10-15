@@ -17,75 +17,17 @@
 
 #include "rpc_private.h"
 
-//#define TRACEPOINT_DEFINE
-//#include "request_tp.h"
-
-typedef void (*ci_disconnect)(struct client_info *);
-
-ci_disconnect ci_disconnect_cb = NULL;
-
-
 static struct system_info __sys;
 struct system_info *sys = &__sys;
 
 static bool serv_init = false;
 
+static LIST_HEAD(listening_fd_list);
 
-struct client_info {
-
-	struct connection conn;
-
-	struct request *rx_req;
-	struct work rx_work;
-
-	struct request *tx_req;
-	struct work tx_work;
-
-	struct list_head done_reqs;
-
-	refcnt_t refcnt;
-	void *data;
+struct listening_fd {
+	int fd;
+	struct list_node list;
 };
-
-
-main_fn void put_request(struct request *req);
-
-
-
-
-static void io_op_done(struct work *work)
-{
-	struct request *req = container_of(work, struct request, work);
-    if(req->rp.result!=SD_RES_SUCCESS){
-        sd_debug("unhandled error:%x %d",req->rq.opcode,req->rp.result);
-    }
-	put_request(req);
-	return;
-}
-
-
-
-void do_process_work(struct work *work)
-{
-	struct request *req = container_of(work, struct request, work);
-	int ret = SD_RES_SUCCESS;
-
-	if (req->op->process_work)
-		ret = req->op->process_work(req);
-
-	if (ret != SD_RES_SUCCESS) {
-		sd_debug("failed: %x, %u, %d", req->rq.opcode,
-			  req->rq.epoch, ret); 
-	}
-
-	req->rp.result = ret;
-}
-
-static void local_op_done(struct work *work)
-{
-	struct request *req = container_of(work, struct request, work);
-	put_request(req);
-}
 
 static struct request *alloc_local_request(void *data, int data_length)
 {
@@ -124,7 +66,7 @@ static void submit_local_request(struct request *req)
  * This function takes advantage of gateway's retry mechanism and can be only
  * called from worker thread.
  */
-worker_fn int rpc_server_local_req(struct sd_req *rq, void *data)
+worker_fn int rpc_local_req(struct sd_req *rq, void *data)
 {
 	struct request *req;
 	int ret;
@@ -172,162 +114,48 @@ worker_fn int rpc_local_req_async(struct sd_req *rq, void *data,
     return SD_RES_SUCCESS;
 }
 
-
-worker_fn struct request_iocb *rpc_local_req_init(void)
-{
-	struct request_iocb *iocb = xzalloc(sizeof(*iocb));
-
-	iocb->efd = eventfd(0, EFD_SEMAPHORE);
-	if (iocb->efd < 0) {
-		sd_err("eventfd failed, %m");
-		free(iocb);
-		return NULL;
-	}
-	iocb->result = SD_RES_SUCCESS;
-	return iocb;
-}
-
-worker_fn int rpc_local_req_wait(struct request_iocb *iocb)
-{
-	int ret;
-	if(!!iocb){
-		return -1;
-	}
-	for (uint32_t i = 0; i < iocb->count; i++)
-		eventfd_xread(iocb->efd);
-
-	ret = iocb->result;
-	close(iocb->efd);
-	free(iocb);
-	return ret;
-}
-
-
-struct areq_work {
-	struct sd_req rq;
-	void *data;
-	struct request_iocb *iocb;
-	int result;
-
-	struct work work;
-};
-
-
-static main_fn inline void stat_request_begin(struct request *req)
-{
-	(void)req;
-//	struct sd_req *hdr = &req->rq;
-
-//	req->stat = true;
-}
-
-static main_fn inline void stat_request_end(struct request *req)
-{
-	(void)req;
-//	struct sd_req *hdr = &req->rq;
-
-//	if (!req->stat)
-//		return;
-}
-
 const struct sd_op_template *get_sd_op(uint8_t opcode)
 {	
-	if(opcode>=sys->ops_count)
+	if (opcode >= sys->ops_count) {
 		return NULL;
+	}
 	return sys->sd_ops + opcode;
 }
 
-static void queue_request(struct request *req)
+static void destroy_client(struct client_info *ci)
 {
-	struct sd_req *hdr = &req->rq;
-	struct sd_rsp *rsp = &req->rp;
-
-	/*
-	 * Check the protocol version for all internal commands, and public
-	 * commands that have it set.  We can't enforce it on all public
-	 * ones as it isn't a mandatory part of the public protocol.
-	 */
-	if (hdr->opcode >= 0x80) {
-        //noting
-	} else if (hdr->proto_ver) {
-		if (hdr->proto_ver > SD_PROTO_VER) {
-			rsp->result = SD_RES_VER_MISMATCH;
-			goto done;
-		}
-	}
-	req->op = get_sd_op(hdr->opcode);
-	if (!req->op) {
-		sd_err("invalid opcode %d", hdr->opcode);
-		rsp->result = SD_RES_INVALID_PARMS;
-		goto done;
-	}
-
-	stat_request_begin(req);
-	if (req->op != NULL && req->op->type == RPC_OP_TYPE_FIX) {
-        req->work.fn = do_process_work;
-        req->work.done = local_op_done;
-        queue_work(sys->fixed_work, &req->work);
-	} else if (req->op != NULL && req->op->type == RPC_OP_TYPE_DYNAMIC) {
-        req->work.fn = do_process_work;
-        req->work.done = local_op_done;
-        queue_work(sys->dynamic_work, &req->work);
-	} else if (req->op != NULL && req->op->type == RPC_OP_TYPE_ORDERED) {
-        req->work.fn = do_process_work;
-        req->work.done = local_op_done;
-        queue_work(sys->ordered_work, &req->work);
-	} else {
-		sd_err("unknown operation %d", hdr->opcode);
-		rsp->result = SD_RES_SYSTEM_ERROR;
-		goto done;
-	}
-
-	return;
-done:
-	put_request(req);
-}
-
-//static void requeue_request(struct request *req)
-//{
-//	stat_request_end(req);
-//	queue_request(req);
-//}
-
-static void clear_client_info(struct client_info *ci);
-
-struct request *alloc_request(struct client_info *ci, uint32_t data_length)
-{
-	struct request *req;
-
-	req = zalloc(sizeof(struct request));
-	if (!req)
-		return NULL;
-
-	if (data_length) {
-		req->data_length = data_length;
-		req->data = valloc(data_length);
-		if (!req->data) {
-			free(req);
-			return NULL;
-		}
-	}
-
-	req->ci = ci;
-	refcount_inc(&ci->refcnt);
-
-	refcount_set(&req->refcnt, 1);
-
-	uatomic_inc(&sys->nr_outstanding_reqs);
-
-	return req;
+	close(ci->conn.fd);
+	free(ci);
 }
 
 static void free_request(struct request *req)
 {
-	uatomic_dec(&sys->nr_outstanding_reqs);
-
 	refcount_dec(&req->ci->refcnt);
 	free(req->data);
 	free(req);
+}
+
+static void clear_client_info(struct client_info *ci)
+{
+	struct request *req;
+
+	sd_debug("connection seems to be dead");
+
+	list_for_each_entry(req, &ci->done_reqs, request_list) {
+		list_del(&req->request_list);
+		free_request(req);
+	}
+
+	unregister_event(ci->conn.fd);
+
+	sd_debug("refcnt:%d, fd:%d, %s:%d", refcount_read(&ci->refcnt),
+		 	 ci->conn.fd, ci->conn.ipstr, ci->conn.port);
+
+	if (refcount_read(&ci->refcnt)) {
+		return;
+	}
+	
+	destroy_client(ci);
 }
 
 main_fn void put_request(struct request *req)
@@ -336,8 +164,6 @@ main_fn void put_request(struct request *req)
 
 	if (refcount_dec(&req->refcnt) > 0)
 		return;
-
-	stat_request_end(req);
 
 	if (req->local){
         if(req->local_req_efd){
@@ -379,9 +205,98 @@ main_fn void put_request(struct request *req)
 	}
 }
 
+struct request *alloc_request(struct client_info *ci, uint32_t data_length)
+{
+	struct request *req;
+
+	req = zalloc(sizeof(struct request));
+	if (!req)
+		return NULL;
+
+	if (data_length) {
+		req->data_length = data_length;
+		req->data = valloc(data_length);
+		if (!req->data) {
+			free(req);
+			return NULL;
+		}
+	}
+
+	req->ci = ci;
+	refcount_inc(&ci->refcnt);
+	refcount_set(&req->refcnt, 1);
+	return req;
+}
+
 main_fn void get_request(struct request *req)
 {
 	refcount_inc(&req->refcnt);
+}
+
+void do_process_work(struct work *work)
+{
+	struct request *req = container_of(work, struct request, work);
+	int ret = SD_RES_SUCCESS;
+
+	if (req->op->process_work)
+		ret = req->op->process_work(req);
+
+	if (ret != SD_RES_SUCCESS) {
+		sd_debug("failed: %x, %u, %d", req->rq.opcode,
+			  req->rq.epoch, ret); 
+	}
+
+	req->rp.result = ret;
+}
+
+static void io_op_done(struct work *work)
+{
+	struct request *req = container_of(work, struct request, work);
+	if(req->rp.result != SD_RES_SUCCESS){
+        sd_debug("unhandled error:%x %d", req->rq.opcode, req->rp.result);
+    }
+	put_request(req);
+}
+
+static void queue_request(struct request *req)
+{
+	struct sd_req *hdr = &req->rq;
+	struct sd_rsp *rsp = &req->rp;
+
+	/*
+	 * Check the protocol version for all internal commands, and public
+	 * commands that have it set.  We can't enforce it on all public
+	 * ones as it isn't a mandatory part of the public protocol.
+	 */
+	if (hdr->opcode >= 0x80) {
+        //noting
+	} else if (hdr->proto_ver) {
+		if (hdr->proto_ver > SD_PROTO_VER) {
+			rsp->result = SD_RES_VER_MISMATCH;
+			goto done;
+		}
+	}
+	req->op = get_sd_op(hdr->opcode);
+	if (NULL == req->op) {
+		sd_err("invalid opcode %d", hdr->opcode);
+		rsp->result = SD_RES_INVALID_PARMS;
+		goto done;
+	}
+	
+	req->work.fn = do_process_work;
+	req->work.done = io_op_done;
+
+	if (req->op->type < RPC_OP_MAX) {
+		queue_work(sys->work_wqueue[req->op->type], &req->work);
+	} else {
+		sd_err("unknown operation %d", hdr->opcode);
+		rsp->result = SD_RES_SYSTEM_ERROR;
+		goto done;
+	}
+
+	return;
+done:
+	put_request(req);
 }
 
 static void rx_work(struct work *work)
@@ -513,40 +428,8 @@ static void tx_main(struct work *work)
 	}
 }
 
-static void destroy_client(struct client_info *ci)
-{
-//	sd_info("connection from: %s:%d", ci->conn.ipstr, ci->conn.port);
-	close(ci->conn.fd);
-	free(ci);
-}
 
-static void clear_client_info(struct client_info *ci)
-{
-	struct request *req;
 
-//	tracepoint(request, clear_client, ci->conn.fd);
-	
-	sd_debug("connection seems to be dead");
-
-	list_for_each_entry(req, &ci->done_reqs, request_list) {
-		list_del(&req->request_list);
-		free_request(req);
-	}
-
-	unregister_event(ci->conn.fd);
-
-	sd_debug("refcnt:%d, fd:%d, %s:%d", refcount_read(&ci->refcnt),
-		 ci->conn.fd, ci->conn.ipstr, ci->conn.port);
-
-	if (refcount_read(&ci->refcnt))
-		return;
-    
-	if(ci_disconnect_cb){
-		ci_disconnect_cb(ci);
-	}
-
-	destroy_client(ci);
-}
 
 static struct client_info *create_client(int fd)
 {
@@ -606,8 +489,6 @@ static struct client_info *create_socket_client(int fd)
 
 	INIT_LIST_HEAD(&ci->done_reqs);
 
-//	tracepoint(request, create_client, fd);
-	
 	return ci;
 }
 
@@ -661,7 +542,6 @@ static void client_handler(int fd, int events, void *data)
 		refcount_inc(&ci->refcnt);
 		ci->tx_work.fn = tx_work;
 		ci->tx_work.done = tx_main;
-//		tracepoint(request, queue_request, fd, &ci->tx_work, 0);
 		queue_work(sys->net_wqueue, &ci->tx_work);
 	}
 }
@@ -718,15 +598,7 @@ static void listen_socket_handler(int listen_fd, int events, void *data)
 		sd_err("failed to accept a new connection: %m");
 		return;
 	}
-#if 0
-	if (is_inet_socket) {
-		ret = set_nodelay(fd);
-		if (ret) {
-			close(fd);
-			return;
-		}
-	}
-#endif
+	
 	ci = create_socket_client(fd);
 	if (!ci) {
 		close(fd);
@@ -741,13 +613,6 @@ static void listen_socket_handler(int listen_fd, int events, void *data)
 
 	sd_info("accepted a new connection: %d", fd);
 }
-
-static LIST_HEAD(listening_fd_list);
-
-struct listening_fd {
-	int fd;
-	struct list_node list;
-};
 
 static int create_listen_port_fn(int fd, void *data)
 {
@@ -776,9 +641,8 @@ void unregister_listening_fds(void)
 	struct listening_fd *fd;
 
 	list_for_each_entry(fd, &listening_fd_list, list) {
-		sd_notice("unregistering fd: %d", fd->fd);
+		sd_debug("unregistering fd: %d", fd->fd);
 		unregister_event(fd->fd);
-        close(fd->fd);
 	}
 }
 
@@ -794,13 +658,8 @@ static int create_listen_socket(const char *socket_path)
 {
 	static bool is_inet_socket = true;
 
-	return create_listen_sockets(socket_path, create_listen_socket_fn,
+	return create_unix_domain_socket(socket_path, create_listen_socket_fn,
 				   &is_inet_socket);    
-}
-
-static void init_ops(struct sd_op_template *ops,int ops_count){
-	sys->ops_count = ops_count;
-	sys->sd_ops = ops;
 }
 
 static void local_req_handler(int listen_fd, int events, void *data)
@@ -808,9 +667,9 @@ static void local_req_handler(int listen_fd, int events, void *data)
 	struct request *req;
 	LIST_HEAD(pending_list);
 
-	if (events & EPOLLERR)
+	if (events & EPOLLERR) {
 		sd_err("request handler error");
-
+	}
 	eventfd_xread(listen_fd);
 
 	sd_mutex_lock(&sys->local_req_lock);
@@ -822,15 +681,15 @@ static void local_req_handler(int listen_fd, int events, void *data)
 		queue_request(req);
 	}
 }
-static void local_request_init(void)
+static int local_request_init(void)
 {
 	INIT_LIST_HEAD(&sys->local_req_queue);
-	INIT_LIST_HEAD(&sys->req_wait_queue);
 	sd_init_mutex(&sys->local_req_lock);
 	sys->local_req_efd = eventfd(0, EFD_NONBLOCK);
-	if (sys->local_req_efd < 0)
+	if (sys->local_req_efd < 0) {
 		panic("failed to init local req efd");
-	register_event(sys->local_req_efd, local_req_handler, NULL);
+	}
+	return register_event(sys->local_req_efd, local_req_handler, NULL);
 }
 
 int rpc_server_start(struct sd_op_template *ops, int ops_count) {
@@ -852,53 +711,41 @@ int rpc_server_start(struct sd_op_template *ops, int ops_count) {
 		sd_err("failed to create work queue");
 		return -1;
 	}
-    
-    sys->fixed_work = create_fixed_work_queue("WayFixed", 4);
-	if (!sys->fixed_work) {
+
+	sys->work_wqueue[RPC_OP_TYPE_FIX] = create_fixed_work_queue("WayFixed", 4);
+	if (!sys->work_wqueue[RPC_OP_TYPE_FIX]) {
 		sd_err("failed to create work queue");
 		return -1;
 	}
 
-    sys->dynamic_work = create_dynamic_work_queue("WayDynamic");
-	if (!sys->dynamic_work) {
+    sys->work_wqueue[RPC_OP_TYPE_DYNAMIC] = create_dynamic_work_queue("WayDynamic");
+	if (!sys->work_wqueue[RPC_OP_TYPE_DYNAMIC]) {
 		sd_err("failed to create work queue");
 		return -1;
 	}
 
-    sys->ordered_work = create_ordered_work_queue("WayOrdered");
-	if (!sys->ordered_work) {
+    sys->work_wqueue[RPC_OP_TYPE_ORDERED] = create_ordered_work_queue("WayOrdered");
+	if (!sys->work_wqueue[RPC_OP_TYPE_ORDERED]) {
 		sd_err("failed to create work queue");
 		return -1;
 	}
-    local_request_init();
+	
+    ret = local_request_init();
+	if (ret) {
+		return ret;
+	}
+	
     ret = create_listen_port("127.0.0.1", 43433);
-    if(ret){
+    if (ret) {
 		return ret;
 	}
-    ret = create_listen_socket("/run/edfssmb.sock");
-	if(ret){
+
+	ret = create_listen_socket("/run/edfssmb.sock");
+	if (ret) {
 		return ret;
 	}
-    serv_init = true;
+
+	serv_init = true;
     return ret;
 }
-
-
-void rpc_server_ci_attach(struct client_info *ci,void *data){
-	ci->data = data;
-}
-
-void rpc_server_ci_deach(struct client_info *ci){
-	ci->data = NULL;
-}
-
-
-void *rpc_server_ci_get(struct client_info *ci){
-	return ci->data;
-}
-
-void rpc_server_regist_disconnect(void (*cb)(struct client_info *ci)){
-	ci_disconnect_cb = cb;
-}
-
 

@@ -40,27 +40,30 @@
 #define main_fn
 #define worker_fn
 
-struct client_info;
+struct client_info {
 
-enum REQUST_STATUS {
-	REQUEST_INIT,
-	REQUEST_QUEUED,
-	REQUEST_DONE,
-	REQUEST_DROPPED
-};
+	struct connection conn;
 
+	struct request *rx_req;
+	struct work rx_work;
 
-struct request_iocb {
-	uint32_t count;
-	int efd;
-	int result;
+	struct request *tx_req;
+	struct work tx_work;
+
+	struct list_head done_reqs;
+
+	refcnt_t refcnt;
+	void *data;
 };
 
 enum sd_op_type {
-	RPC_OP_TYPE_FIX = 1, /* FIX */
+	RPC_OP_TYPE_FIX = 0, /* FIX */
 	RPC_OP_TYPE_DYNAMIC, /* DYNAMIC */
 	RPC_OP_TYPE_ORDERED, /* ORDERED */
+	RPC_OP_MAX,
 };
+
+#define RPC_OP_TYPE_MIN RPC_OP_TYPE_FIX
 
 struct request;
 
@@ -117,32 +120,21 @@ struct request {
     int (*local_callbak)(struct sd_rsp *rp,void *local_data);
     void *local_data;
 	struct work work;
-	enum REQUST_STATUS status;
 	bool stat; /* true if this request is during stat */
 };
 
 
-struct system_info {
-	const char *cdrv_option;
-	
+struct system_info {	
 	int local_req_efd;
 
 	struct sd_mutex local_req_lock;
 	struct list_head local_req_queue;
-	struct list_head req_wait_queue;
-	int nr_outstanding_reqs;
-
 
 	struct sd_op_template *sd_ops;
 	uint8_t ops_count;
     
     struct work_queue *net_wqueue;
-	struct work_queue *fixed_work;
-	struct work_queue *dynamic_work;
-	struct work_queue *ordered_work;
-
-	/* upgrade data layout before starting service if necessary*/
-	bool upgrade;
+	struct work_queue *work_wqueue[RPC_OP_MAX];
 };
 
 struct sdrequest_cache {
@@ -199,31 +191,12 @@ int rpc_server_socket_start(const char *socket_path,
 					struct sd_op_template *ops,int ops_count );
 int rpc_server_stop(void);
 
-
-void rpc_server_ci_attach(struct client_info *ci, void *data);
-void rpc_server_ci_deach(struct client_info *ci);
-void *rpc_server_ci_get(struct client_info *ci);
-void rpc_server_regist_disconnect(void (*cb)(struct client_info *));
-
-
-
-struct request_iocb *rpc_local_req_init(void);
-int rpc_local_req_wait(struct request_iocb *iocb);
+int rpc_local_req(struct sd_req *rq, void *data);
 int rpc_local_req_async(struct sd_req *rq, void *data,
     int (*local_callbak)(struct sd_rsp *rp,void *local_data),void *local_data);
 
-
-int rpc_server_local_req(struct sd_req *rq, void *data);
-
-
 struct sd_client *rpc_client_connect(char *host);
 struct sd_client *rpc_client_connect_socket(const char *socket_path);
-int rpc_client_disconnect(struct sd_client *c);
-int rpc_client_is_new_session(struct sd_client *c);
-void rpc_client_reset_new_session(struct sd_client *c);
-void rpc_client_retry(struct sd_client *c,int connect_retry,int read_retry,int write_retry);
-int rpc_client_run_req(struct sd_client *c, struct sd_req *hdr, void *data);
-
 int rpc_send_request(struct sd_req * req, struct sd_rsp *rsp, uint8_t *buff);
 
 #endif

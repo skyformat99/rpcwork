@@ -73,13 +73,13 @@ static void *test_loop(void *arg) {
 	while (n --) {
         hdr.opcode = SAMPLE_OP_FIX;
         hdr.proto_ver = SD_PROTO_VER;
-        rpc_local_req_async(&hdr, NULL, NULL, NULL);
+        rpc_local_req(&hdr, NULL);
         hdr.opcode = SAMPLE_OP_DYNAMIC;
         hdr.proto_ver = SD_PROTO_VER;
-        rpc_local_req_async(&hdr, NULL, NULL, NULL);
+		rpc_local_req(&hdr, NULL);
         hdr.opcode = SAMPLE_OP_ORDERED;
         hdr.proto_ver = SD_PROTO_VER;
-        rpc_local_req_async(&hdr, NULL, NULL, NULL);
+		rpc_local_req_async(&hdr, NULL, NULL, NULL);
 	}
 	return NULL;
 }

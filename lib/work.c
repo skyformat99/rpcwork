@@ -293,9 +293,9 @@ void queue_work(struct work_queue *q, struct work *work)
 	sd_mutex_lock(&wi->pending_lock);
 
 	new_nr_threads = wq_need_grow(wi);
-	if (new_nr_threads > 0)
+	if (new_nr_threads > 0) {
 		create_worker_threads(wi, new_nr_threads);
-
+	}
 	list_add_tail(&work->w_list, &wi->q.pending_list);
 	sd_mutex_unlock(&wi->pending_lock);
 

@@ -132,6 +132,49 @@ int create_listen_ports(const char *bindaddr, int port,
 	return !success;
 }
 
+int create_unix_domain_socket(const char *unix_path,
+			      			  int (*callback)(int, void *), void *data)
+{
+	int fd, ret;
+	struct sockaddr_un addr;
+
+	addr.sun_family = AF_UNIX;
+	pstrcpy(addr.sun_path, sizeof(addr.sun_path), unix_path);
+
+	unlink(unix_path);
+	fd = socket(addr.sun_family, SOCK_STREAM, 0);
+	if (fd < 0) {
+		sd_err("failed to create socket, %m");
+		return -1;
+	}
+
+	ret = bind(fd, (struct sockaddr *)&addr, sizeof(addr));
+	if (ret) {
+		unlink(unix_path);
+		sd_err("failed to bind socket: %m");
+		goto err;
+	}
+
+	ret = listen(fd, SOMAXCONN);
+	if (ret) {
+		unlink(unix_path);
+		sd_err("failed to listen on socket: %m");
+		goto err;
+	}
+
+	ret = callback(fd, data);
+	if (ret) {
+		unlink(unix_path);
+		goto err;
+	}
+	return 0;
+	
+err:
+	close(fd);
+	return -1;
+}
+
+/*
 int create_listen_sockets(const char *socket_path,
         int (*callback)(int fd, void *), void *data)
 {
@@ -185,6 +228,7 @@ int create_listen_sockets(const char *socket_path,
 
     return ret;
 }
+*/
 
 int connect_to(const char *name, int port)
 {
@@ -664,44 +708,6 @@ reconnect:
 	}
 	sd_debug("%d, %s", fd, socket_path);
 	return fd;
-}
-
-int create_unix_domain_socket(const char *unix_path,
-			      int (*callback)(int, void *), void *data)
-{
-	int fd, ret;
-	struct sockaddr_un addr;
-
-	addr.sun_family = AF_UNIX;
-	pstrcpy(addr.sun_path, sizeof(addr.sun_path), unix_path);
-
-	fd = socket(addr.sun_family, SOCK_STREAM, 0);
-	if (fd < 0) {
-		sd_err("failed to create socket, %m");
-		return -1;
-	}
-
-	ret = bind(fd, (struct sockaddr *)&addr, sizeof(addr));
-	if (ret) {
-		sd_err("failed to bind socket: %m");
-		goto err;
-	}
-
-	ret = listen(fd, SOMAXCONN);
-	if (ret) {
-		sd_err("failed to listen on socket: %m");
-		goto err;
-	}
-
-	ret = callback(fd, data);
-	if (ret)
-		goto err;
-
-	return 0;
-err:
-	close(fd);
-
-	return -1;
 }
 
 bool inetaddr_is_valid(char *addr)
