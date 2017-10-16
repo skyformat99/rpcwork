@@ -64,7 +64,7 @@ struct wq_info {
 	enum wq_thread_control tc;
 };
 
-static int efd;
+static int work_efd;
 static LIST_HEAD(wq_info_list);
 static size_t nr_nodes = 1;
 static size_t (*wq_get_nr_nodes)(void);
@@ -373,7 +373,7 @@ retest:
 		list_add_tail(&work->w_list, &wi->finished_list);
 		sd_mutex_unlock(&wi->finished_lock);
 
-		eventfd_xwrite(efd, 1);
+		eventfd_xwrite(work_efd, 1);
 	}
 
 	pthread_exit(NULL);
@@ -383,16 +383,16 @@ int init_work_queue()
 {
 	int ret;
 
-	efd = eventfd(0, EFD_NONBLOCK);
-	if (efd < 0) {
+	work_efd = eventfd(0, EFD_NONBLOCK);
+	if (work_efd < 0) {
 		sd_err("failed to create event fd: %m");
 		return -1;
 	}
 
-	ret = register_event(efd, worker_thread_request_done, NULL);
+	ret = register_event(work_efd, worker_thread_request_done, NULL);
 	if (ret) {
 		sd_err("failed to register event fd %m");
-		close(efd);
+		close(work_efd);
 		return -1;
 	}
 
