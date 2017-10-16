@@ -2,6 +2,7 @@
 #include "event.h"
 #include "rpc_private.h"
 #include "sockfd_cache.h"
+
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
 #include <sys/poll.h> 
@@ -71,36 +72,58 @@ out:
 	return err_ret;
 }
 
-int rpc_send_request(struct sd_req * req, struct sd_rsp *rsp, uint8_t *buff)
+int __rpc_send_request(struct node_id *nid, struct sd_req * req, struct sd_rsp *rsp, uint8_t *buff)
 {
-	struct node_id nid;
-    int ret = 0;
-    memset(&nid, 0, sizeof(nid));
-    memcpy(nid.addr, "127.0.0.1", strlen("127.0.0.1"));
-    nid.port = 43433;
-    nid.is_socket = 1;
+    int ret;
 	unsigned wlen = 0;
 	uint8_t *data = NULL;
 	struct sockfd *sfd;
     uint32_t epoch = 0;
 
-	sfd = sockfd_cache_get(&nid);
+	sfd = sockfd_cache_get(nid);
 	if (!sfd) {
-        sd_err("get sock fail,addr(%s:%d)",nid.addr,nid.port);
+        if (!nid->is_socket) {
+            sd_err("get sock fail, addr(%s:%d)",nid->addr, nid->port);
+        } else {
+            sd_err("get sock fail, unixpath(%s)",nid->unixpath);
+        }
 		return -1;
 	}
 
     ret = send_req(sfd->fd, (void *)req, sizeof(struct sd_req), data, wlen, eofs_need_retry, 0, MAX_RETRY_COUNT);
 	if (ret) {
-        sockfd_cache_del(&nid, sfd);
+        sockfd_cache_del(nid, sfd);
 		return ret;
 	}
     
-	ret = rpc_wait_request(&nid, rsp, sfd, buff);
+	ret = rpc_wait_request(nid, rsp, sfd, buff);
 	if (ret) {
 		return ret;
     }
 
     return 0;
+}
+
+int rpc_send_request(const char *addr, uint16_t port, struct sd_req * req, struct sd_rsp *rsp, uint8_t *buff)
+{
+	struct node_id nid;
+    
+    memset(&nid, 0, sizeof(nid));
+    memcpy(nid.addr, addr, strlen(addr));
+    nid.port = port;
+
+	return __rpc_send_request(&nid, req, rsp, buff);
+}
+
+int rpc_send_socket_request(const char* unixpath, struct sd_req * req, struct sd_rsp *rsp, uint8_t *buff)
+{
+	struct node_id nid;
+    
+    memset(&nid, 0, sizeof(nid));
+    nid.is_socket = 1;
+    memcpy(nid.unixpath, unixpath, strlen(unixpath));
+
+	return __rpc_send_request(&nid, req, rsp, buff);
+
 }
 

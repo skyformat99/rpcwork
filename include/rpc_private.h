@@ -185,19 +185,15 @@ struct reconnect_entry{
 	struct timer t;
 };
 
-int rpc_server_start(struct sd_op_template *ops, int ops_count);
-int rpc_server_socket_start(const char *socket_path,
-                    int wq_net_threads, int wq_io_threads,int wq_flush_threads,int wq_load_threads,int wq_meta_threads, 
-					struct sd_op_template *ops,int ops_count );
-int rpc_server_stop(void);
-
+int rpc_server_start(struct sd_op_template *ops, int ops_count, const char* addr, uint16_t port, const char* unixpath);
 int rpc_local_req(struct sd_req *rq, void *data);
 int rpc_local_req_async(struct sd_req *rq, void *data,
     int (*local_callbak)(struct sd_rsp *rp,void *local_data),void *local_data);
 
 struct sd_client *rpc_client_connect(char *host);
 struct sd_client *rpc_client_connect_socket(const char *socket_path);
-int rpc_send_request(struct sd_req * req, struct sd_rsp *rsp, uint8_t *buff);
+int rpc_send_request(const char *addr, uint16_t port, struct sd_req * req, struct sd_rsp *rsp, uint8_t *buff);
+int rpc_send_socket_request(const char *unixpath, struct sd_req * req, struct sd_rsp *rsp, uint8_t *buff);
 
 #endif
 

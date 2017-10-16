@@ -118,7 +118,11 @@ static struct sockfd_cache_entry *sockfd_cache_grab(const struct node_id *nid,
 	sd_read_lock(&sockfd_cache.lock);
 	entry = sockfd_cache_search(nid);
 	if (!entry) {
-		sd_debug("failed node %s", addr_to_str(nid->addr, nid->port));
+        if (nid->is_socket) {
+            sd_debug("failed node %s", nid->unixpath);
+        } else {
+		    sd_debug("failed node %s", addr_to_str(nid->addr, nid->port));
+        }
 		goto out;
 	}
 
@@ -297,7 +301,11 @@ static inline void check_idx(int idx)
 static inline int revalidate_node(const struct node_id *nid)
 {
 	int fd;
-	fd = connect_to((const char *)nid->addr, nid->port);
+    if (nid->is_socket) {
+	    fd = connect_to_socket((const char *)nid->unixpath);
+    } else {
+	    fd = connect_to((const char *)nid->addr, nid->port);
+    }
 	if (fd < 0)
 		return false;
 	close(fd);
@@ -335,17 +343,20 @@ grab:
 	}
 
 	check_idx(idx);
-	if (entry->fds[idx].fd != -1) {
-		sd_debug("%s, idx %d", addr_to_str(addr, port), idx);
-		goto out;
-	}
-
 	/* Create a new cached connection for this node */
-	sd_debug("create cache connection %s idx %d", addr_to_str(addr, port),
-		 idx);
     if (nid->is_socket) {
-	    fd = connect_to_socket("/run/edfssmb.sock");
+        if (entry->fds[idx].fd != -1) {
+    		sd_debug("%s, idx %d", nid->unixpath, idx);
+    		goto out;
+	    }
+        sd_debug("create cache connection unixpath(%s) idx %d", nid->unixpath, idx);
+	    fd = connect_to_socket((const char *)nid->unixpath);
     } else {
+    	if (entry->fds[idx].fd != -1) {
+    		sd_debug("%s, idx %d", addr_to_str(addr, port), idx);
+    		goto out;
+	    }
+        sd_debug("create cache connection %s idx %d", addr_to_str(addr, port), idx);
 	    fd = connect_to((const char *)addr, port);
     }
     if (fd < 0) {
@@ -367,9 +378,13 @@ static void sockfd_cache_put_long(const struct node_id *nid, int idx)
 	const uint8_t *addr = nid->addr;
 	int port = nid->port;
 	struct sockfd_cache_entry *entry;
-
-	sd_debug("%s idx %d", addr_to_str(addr, port), idx);
-
+    
+    if (nid->is_socket) {
+        sd_debug("%s idx %d", nid->unixpath, idx);
+    } else {
+        sd_debug("%s idx %d", addr_to_str(addr, port), idx);
+    }
+	
 	sd_read_lock(&sockfd_cache.lock);
 	entry = sockfd_cache_search(nid);
 	if (entry)
@@ -382,8 +397,12 @@ static void sockfd_cache_close(const struct node_id *nid, int idx)
 	const uint8_t *addr =  nid->addr;
 	int port = nid->port;
 	struct sockfd_cache_entry *entry;
-
-	sd_debug("%s idx %d", addr_to_str(addr, port), idx);
+    
+    if (nid->is_socket) {
+        sd_debug("%s idx %d", nid->unixpath, idx);
+    } else {
+        sd_debug("%s idx %d", addr_to_str(addr, port), idx);
+    }
 
 	sd_write_lock(&sockfd_cache.lock);
 	entry = sockfd_cache_search(nid);
@@ -427,12 +446,13 @@ struct sockfd *sockfd_cache_get(const struct node_id *nid)
 	int fd;
 
 	sfd = sockfd_cache_get_long(nid);
-	if (sfd)
+	if (sfd) {
 		return sfd;
-
+    }
+    
 	/* Fallback on a non-io connection that is to be closed shortly */
-    if(nid->is_socket) {
-	    fd = connect_to_socket("/run/edfssmb.sock");
+    if (nid->is_socket) {
+	    fd = connect_to_socket((const char *)nid->unixpath);
     } else {
         fd = connect_to((const char *)nid->addr, nid->port);
     }

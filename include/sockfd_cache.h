@@ -14,6 +14,7 @@ struct node_id {
 	uint8_t addr[16];
 	uint16_t port;
     uint16_t is_socket;
+    uint8_t unixpath[256];
 };
 
 struct sockfd *sockfd_cache_get(const struct node_id *nid);

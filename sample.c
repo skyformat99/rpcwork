@@ -9,27 +9,27 @@
 static int do_fix_op(struct request *req){
 	struct sd_req *hdr = &req->rq;
 	struct sd_rsp *rsp = &req->rp;
-	sd_notice("do fix thread begin tid(%d)", gettid());
+	sd_notice("do fix thread begin");
     sleep(1);
-    sd_notice("do fix thread end %d", gettid());
+    sd_notice("do fix thread end");
 	return 0;
 }
 
 static int do_dynamic_op(struct request *req){
 	struct sd_req *hdr = &req->rq;
 	struct sd_rsp *rsp = &req->rp;
-	sd_notice("do dynamic thread begin tid(%d)", gettid());
+	sd_notice("do dynamic thread begin");
     sleep(1);
-    sd_notice("do dynamic thread end %d", gettid());
+    sd_notice("do dynamic thread end");
 	return 0;
 }
 
 static int do_ordered_op(struct request *req){
 	struct sd_req *hdr = &req->rq;
 	struct sd_rsp *rsp = &req->rp;
-	sd_notice("do ordered thread begin tid(%d)", gettid());
+	sd_notice("do ordered thread begin");
     sleep(1);
-    sd_notice("do ordered thread end %d", gettid());
+    sd_notice("do ordered thread end");
 	return 0;
 }
 
@@ -73,10 +73,10 @@ static void *test_loop(void *arg) {
 	while (n --) {
         hdr.opcode = SAMPLE_OP_FIX;
         hdr.proto_ver = SD_PROTO_VER;
-        rpc_local_req(&hdr, NULL);
+        rpc_local_req_async(&hdr, NULL, NULL, NULL); 
         hdr.opcode = SAMPLE_OP_DYNAMIC;
         hdr.proto_ver = SD_PROTO_VER;
-		rpc_local_req(&hdr, NULL);
+		rpc_local_req_async(&hdr, NULL, NULL, NULL); 
         hdr.opcode = SAMPLE_OP_ORDERED;
         hdr.proto_ver = SD_PROTO_VER;
 		rpc_local_req_async(&hdr, NULL, NULL, NULL);
@@ -88,7 +88,7 @@ int main() {
     pthread_t thread;
     pthread_t thread1;
     int ret = 0;
-    rpc_server_start(serv_ops, sizeof(serv_ops));
+    rpc_server_start(serv_ops, sizeof(serv_ops), "127.0.0.1", 33443, "/run/edfssmb.sock");
     pthread_create(&thread, NULL, work_loop, NULL);
     sleep(1);
     pthread_create(&thread1, NULL, test_loop, NULL);

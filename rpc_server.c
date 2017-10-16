@@ -691,7 +691,7 @@ static int local_request_init(void)
 	return register_event(sys->local_req_efd, local_req_handler, NULL);
 }
 
-int rpc_server_start(struct sd_op_template *ops, int ops_count) {
+int rpc_server_start(struct sd_op_template *ops, int ops_count, const char* addr, uint16_t port, const char* unixpath) {
     int ret = 0;
     sys->sd_ops = ops;
     sys->ops_count = ops_count;
@@ -733,17 +733,21 @@ int rpc_server_start(struct sd_op_template *ops, int ops_count) {
 	if (ret) {
 		return ret;
 	}
-	
-    ret = create_listen_port("127.0.0.1", 43433);
-    if (ret) {
-		return ret;
-	}
 
-	ret = create_listen_socket("/run/edfssmb.sock");
-	if (ret) {
-		return ret;
-	}
-
+    if (addr) {
+        ret = create_listen_port(addr, port);
+        if (ret) {
+    		return ret;
+    	}
+    }
+    
+    if (unixpath) {
+    	ret = create_listen_socket(unixpath);
+    	if (ret) {
+    		return ret;
+    	}
+    }
+    
 	serv_init = true;
     return ret;
 }

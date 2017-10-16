@@ -54,32 +54,32 @@
 
 #define panic(fmt, args...)			\
 ({						\
-	fprintf(stderr, "PANIC: " fmt, ##args);	\
+	fprintf(stderr, "%s:%d PANIC(%d): " fmt, __func__, __LINE__, gettid(), ##args);	\
 	fprintf(stderr, "\n");	\
 	abort();				\
 })
 
 #define sd_debug(fmt, args...)			\
 ({						\
-	fprintf(stderr, "DEBUG: " fmt, ##args);	\
+	fprintf(stderr, "%s:%d DEBUG(%d): " fmt, __func__, __LINE__, gettid(), ##args);	\
 	fprintf(stderr, "\n");	\
 })
 
 #define sd_info(fmt, args...)			\
     ({                      \
-        fprintf(stderr, "INFO: " fmt, ##args); \
+        fprintf(stderr, "%s:%d INFO(%d): " fmt, __func__, __LINE__, gettid(),  ##args); \
         fprintf(stderr, "\n");  \
     })
 
 #define sd_err(fmt, args...)			\
 ({						\
-	fprintf(stderr, "ERROR: " fmt, ##args);	\
+	fprintf(stderr, "%s:%d ERROR(%d): " fmt, __func__, __LINE__, gettid(),  ##args);	\
 	fprintf(stderr, "\n");	\
 })
 
 #define sd_notice(fmt, args...)			\
 ({                      \
-    fprintf(stderr, "NOTICE: " fmt, ##args); \
+    fprintf(stderr, "%s:%d NOTICE(%d): " fmt, __func__, __LINE__, gettid(),  ##args); \
     fprintf(stderr, "\n");  \
 })
 

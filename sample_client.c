@@ -9,7 +9,7 @@ static int sample_request(uint8_t opcode) {
 	hdr.opcode = opcode;
 	hdr.proto_ver = SD_PROTO_VER;
 
-    ret = rpc_send_request(&hdr, &rsp, NULL);
+    ret = rpc_send_socket_request("/run/edfssmb.sock", &hdr, &rsp, NULL);
     if(ret){
         return ret;
     }
