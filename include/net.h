@@ -5,7 +5,6 @@
 #include <arpa/inet.h>
 
 #include "list.h"
-#include "rpc_proto.h"
 
 /*
  * We can't always retry because if only IO NIC is down, we'll retry for ever.
@@ -60,10 +59,9 @@ int conn_rx_on(struct connection *conn);
 int rx(struct connection *conn, enum conn_state next_state);
 int tx(struct connection *conn, enum conn_state next_state);
 int connect_to(const char *name, int port);
-int send_req(int sockfd, struct sd_req *hdr, void *data, unsigned int wlen,
-	     bool (*need_retry)(uint32_t), uint32_t, uint32_t);
-int exec_req(int sockfd, struct sd_req *hdr, void *,
-	     bool (*need_retry)(uint32_t), uint32_t, uint32_t);
+int send_req(int sockfd, void *hdr, unsigned int hdrlen, void *data, unsigned int wlen,
+	     bool (*need_retry)(uint32_t epoch), uint32_t epoch,
+	     uint32_t max_count);
 int do_read(int sockfd, void *buf, uint32_t len,
 	    bool (*need_retry)(uint32_t), uint32_t, uint32_t);
 int create_listen_ports(const char *bindaddr, int port,

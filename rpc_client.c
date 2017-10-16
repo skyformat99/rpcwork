@@ -90,7 +90,7 @@ int rpc_send_request(struct sd_req * req, struct sd_rsp *rsp, uint8_t *buff)
 		return -1;
 	}
 
-    ret = send_req(sfd->fd, req, data, wlen, eofs_need_retry, 0, MAX_RETRY_COUNT);
+    ret = send_req(sfd->fd, (void *)req, sizeof(struct sd_req), data, wlen, eofs_need_retry, 0, MAX_RETRY_COUNT);
 	if (ret) {
         sockfd_cache_del(&nid, sfd);
 		return ret;

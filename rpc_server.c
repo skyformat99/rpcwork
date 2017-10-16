@@ -14,7 +14,6 @@
 #include <sys/socket.h>    
 #include <sys/un.h> 
 
-
 #include "rpc_private.h"
 
 static struct system_info __sys;
@@ -389,7 +388,7 @@ static void tx_work(struct work *work)
 	if (rsp.data_length)
 		data = req->data;
 
-	ret = send_req(conn->fd, (struct sd_req *)&rsp, data, rsp.data_length,
+	ret = send_req(conn->fd, (void *)&rsp, sizeof(struct sd_req), data, rsp.data_length,
 		       NULL, 0, UINT32_MAX);
 	if (ret != 0) {
 		sd_err("failed to send a request");

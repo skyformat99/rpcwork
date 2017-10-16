@@ -388,7 +388,7 @@ rewrite:
 	return 0;
 }
 
-int send_req(int sockfd, struct sd_req *hdr, void *data, unsigned int wlen,
+int send_req(int sockfd, void *hdr, unsigned int hdrlen, void *data, unsigned int wlen,
 	     bool (*need_retry)(uint32_t epoch), uint32_t epoch,
 	     uint32_t max_count)
 {
@@ -402,7 +402,7 @@ int send_req(int sockfd, struct sd_req *hdr, void *data, unsigned int wlen,
 
 	msg.msg_iovlen = 1;
 	iov[0].iov_base = hdr;
-	iov[0].iov_len = sizeof(*hdr);
+	iov[0].iov_len = hdrlen;
 
 	if (wlen) {
 		msg.msg_iovlen++;
@@ -410,56 +410,14 @@ int send_req(int sockfd, struct sd_req *hdr, void *data, unsigned int wlen,
 		iov[1].iov_len = wlen;
 	}
 
-	ret = do_write(sockfd, &msg, sizeof(*hdr) + wlen, need_retry, epoch,
+	ret = do_write(sockfd, &msg, hdrlen + wlen, need_retry, epoch,
 		       max_count);
 	if (ret) {
-		sd_err("failed to send request %x, %d: %m", hdr->opcode, wlen);
+		sd_err("failed to send request, (%d): %m", wlen);
 		ret = -1;
 	}
 
 	return ret;
-}
-
-int exec_req(int sockfd, struct sd_req *hdr, void *data,
-	     bool (*need_retry)(uint32_t epoch), uint32_t epoch,
-	     uint32_t max_count)
-{
-	int ret;
-	struct sd_rsp *rsp = (struct sd_rsp *)hdr;
-	unsigned int wlen, rlen;
-
-	if (hdr->flags & SD_FLAG_CMD_WRITE) {
-		wlen = hdr->data_length;
-		if (hdr->flags & SD_FLAG_CMD_PIGGYBACK)
-			rlen = hdr->data_length;
-		else
-			rlen = 0;
-	} else {
-		wlen = 0;
-		rlen = hdr->data_length;
-	}
-
-	if (send_req(sockfd, hdr, data, wlen, need_retry, epoch, max_count))
-		return 1;
-
-	ret = do_read(sockfd, rsp, sizeof(*rsp), need_retry, epoch, max_count);
-	if (ret) {
-		sd_err("failed to read a response");
-		return 1;
-	}
-
-	if (rlen > rsp->data_length)
-		rlen = rsp->data_length;
-
-	if (rlen) {
-		ret = do_read(sockfd, data, rlen, need_retry, epoch, max_count);
-		if (ret) {
-			sd_err("failed to read the response data");
-			return 1;
-		}
-	}
-
-	return 0;
 }
 
 const char *addr_to_str(const uint8_t *addr, uint16_t port)
